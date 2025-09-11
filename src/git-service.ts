@@ -101,8 +101,15 @@ export class GitService {
       throw error;
     }
 
-    // Scope git to either the provided file's repo or the current working dir
-    const baseDir = filePath ? dirname(resolve(filePath)) : process.cwd();
+    // Validate file path
+    if (!filePath) {
+      const error = new Error('File path is required');
+      this.logger.logToolError('getCommitDetail', error, params);
+      throw error;
+    }
+
+    // Scope git to the provided file's repo
+    const baseDir = dirname(resolve(filePath));
     const git = simpleGit({ baseDir });
 
     this.logger.info('Git repository scoped', {

@@ -82,10 +82,10 @@ class GitBlameServer {
                 },
                 filePath: {
                   type: 'string',
-                  description: 'Optional file path to scope the repository for the commit lookup',
+                  description: 'File path to scope the repository for the commit lookup',
                 },
               },
-              required: ['commitHash'],
+              required: ['commitHash', 'filePath'],
             },
           },
         ] as Tool[],
@@ -107,7 +107,7 @@ class GitBlameServer {
           commitHash: args.commitHash as string,
           includeDiff: args.includeDiff as boolean | undefined,
           includeFileDiffs: args.includeFileDiffs as boolean | undefined,
-          filePath: args.filePath as string | undefined,
+          filePath: args.filePath as string,
         };
         return await this.handleGitCommitDetail(params);
       }

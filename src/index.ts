@@ -9,10 +9,12 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { GitBlameParams, GitCommitDetailParams } from './types.js';
 import { GitService } from './git-service.js';
+import { Logger } from './logger.js';
 
 class GitBlameServer {
   private server: Server;
   private gitService: GitService;
+  private logger: Logger;
 
   constructor() {
     this.server = new Server(
@@ -28,6 +30,7 @@ class GitBlameServer {
     );
 
     this.gitService = new GitService();
+    this.logger = Logger.getInstance();
     this.setupToolHandlers();
   }
 
@@ -126,8 +129,20 @@ class GitBlameServer {
   }
 
   private async handleGitCommitDetail(params: GitCommitDetailParams) {
+    const startTime = Date.now();
+    this.logger.logToolCall('git_commit_detail', params);
+
     try {
       const result = await this.gitService.getCommitDetail(params);
+      const duration = Date.now() - startTime;
+
+      this.logger.info('git_commit_detail completed successfully', {
+        commitHash: params.commitHash,
+        filePath: params.filePath,
+        filesChanged: result.filesChanged,
+        changedFilesCount: result.changedFiles?.length || 0,
+        duration: `${duration}ms`
+      });
 
       return {
         content: [
@@ -139,6 +154,11 @@ class GitBlameServer {
       };
 
     } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.logToolError('git_commit_detail', error as Error, {
+        ...params,
+        duration: `${duration}ms`
+      });
       throw new Error(`Failed to get commit details: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

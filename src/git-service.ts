@@ -3,12 +3,15 @@ import { existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { GitBlameParams, GitBlameLine, GitCommitDetailParams, GitCommitDetail, GitChangedFile } from './types.js';
 import { BlameParser } from './blame-parser.js';
+import { Logger } from './logger.js';
 
 export class GitService {
   private parser: BlameParser;
+  private logger: Logger;
 
   constructor() {
     this.parser = new BlameParser();
+    this.logger = Logger.getInstance();
   }
 
   async getBlameInfo(params: GitBlameParams): Promise<{
@@ -81,35 +84,73 @@ export class GitService {
   }
 
   async getCommitDetail(params: GitCommitDetailParams): Promise<GitCommitDetail> {
+    const startTime = Date.now();
     const { commitHash, includeDiff = false, filePath } = params;
+
+    this.logger.info('Starting getCommitDetail', {
+      commitHash,
+      includeDiff,
+      filePath,
+      operation: 'getCommitDetail'
+    });
 
     // Validate commit hash
     if (!commitHash) {
-      throw new Error('Commit hash is required');
+      const error = new Error('Commit hash is required');
+      this.logger.logToolError('getCommitDetail', error, params);
+      throw error;
     }
 
     // Scope git to either the provided file's repo or the current working dir
     const baseDir = filePath ? dirname(resolve(filePath)) : process.cwd();
     const git = simpleGit({ baseDir });
 
+    this.logger.info('Git repository scoped', {
+      baseDir,
+      filePath,
+      operation: 'getCommitDetail'
+    });
+
     // Check if we're in a git repository
     const isRepo = await git.checkIsRepo();
     if (!isRepo) {
-      throw new Error('Not in a git repository');
+      const error = new Error('Not in a git repository');
+      this.logger.logToolError('getCommitDetail', error, { baseDir, filePath });
+      throw error;
     }
 
     try {
       // Verify the commit exists in this repository first
       try {
         await git.revparse([commitHash]);
+        this.logger.info('Commit verified in repository', {
+          commitHash,
+          baseDir,
+          operation: 'getCommitDetail'
+        });
       } catch {
-        throw new Error(`Commit not found in repository at ${baseDir}: ${commitHash}`);
+        const error = new Error(`Commit not found in repository at ${baseDir}: ${commitHash}`);
+        this.logger.logToolError('getCommitDetail', error, { commitHash, baseDir });
+        throw error;
       }
 
       // Use no-patch to get clean sections for reliable parsing
+      this.logger.info('Fetching commit information', {
+        commitHash,
+        operation: 'getCommitDetail'
+      });
+      
       const headerInfo = await git.show([commitHash, '--format=fuller', '--no-patch']);
       const nameStatusOut = await git.show([commitHash, '--name-status', '--pretty=format:']);
       const numstatOut = await git.show([commitHash, '--numstat', '--pretty=format:']);
+
+      this.logger.info('Git show commands completed', {
+        commitHash,
+        headerLength: headerInfo.length,
+        nameStatusLength: nameStatusOut.length,
+        numstatLength: numstatOut.length,
+        operation: 'getCommitDetail'
+      });
 
       // Initialize fields
       let hash = '';
@@ -240,16 +281,46 @@ export class GitService {
         if (typeof f.deletions === 'number') deletions += f.deletions;
       }
 
+      this.logger.info('Parsed commit details', {
+        commitHash,
+        filesChanged,
+        insertions,
+        deletions,
+        changedFilesCount: changedFiles.length,
+        operation: 'getCommitDetail'
+      });
+
       // Get diff if requested
       let diff: string | undefined;
       if (includeDiff) {
         try {
+          this.logger.info('Fetching diff', { commitHash, operation: 'getCommitDetail' });
           diff = await git.show([commitHash]);
+          this.logger.info('Diff fetched successfully', {
+            commitHash,
+            diffLength: diff.length,
+            operation: 'getCommitDetail'
+          });
         } catch (error) {
           // Diff might fail for some commits, continue without it
-          console.warn('Failed to get diff:', error);
+          this.logger.warn('Failed to get diff', {
+            commitHash,
+            error: error instanceof Error ? error.message : String(error),
+            operation: 'getCommitDetail'
+          });
         }
       }
+
+      const duration = Date.now() - startTime;
+      this.logger.info('getCommitDetail completed successfully', {
+        commitHash,
+        filesChanged,
+        insertions,
+        deletions,
+        changedFilesCount: changedFiles.length,
+        duration: `${duration}ms`,
+        operation: 'getCommitDetail'
+      });
 
       return {
         hash,
@@ -274,7 +345,14 @@ export class GitService {
       };
 
     } catch (error) {
-      throw new Error(`Failed to get commit details: ${error instanceof Error ? error.message : String(error)}`);
+      const duration = Date.now() - startTime;
+      const errorMessage = `Failed to get commit details: ${error instanceof Error ? error.message : String(error)}`;
+      this.logger.logToolError('getCommitDetail', new Error(errorMessage), {
+        commitHash,
+        filePath,
+        duration: `${duration}ms`
+      });
+      throw new Error(errorMessage);
     }
   }
 }

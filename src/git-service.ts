@@ -1,7 +1,7 @@
 import { simpleGit, SimpleGit } from 'simple-git';
 import { existsSync } from 'fs';
 import { resolve, dirname } from 'path';
-import { GitBlameParams, GitBlameLine } from './types.js';
+import { GitBlameParams, GitBlameLine, GitCommitDetailParams, GitCommitDetail, GitChangedFile } from './types.js';
 import { BlameParser } from './blame-parser.js';
 
 export class GitService {
@@ -78,5 +78,203 @@ export class GitService {
       },
       blame: filteredLines
     };
+  }
+
+  async getCommitDetail(params: GitCommitDetailParams): Promise<GitCommitDetail> {
+    const { commitHash, includeDiff = false, filePath } = params;
+
+    // Validate commit hash
+    if (!commitHash) {
+      throw new Error('Commit hash is required');
+    }
+
+    // Scope git to either the provided file's repo or the current working dir
+    const baseDir = filePath ? dirname(resolve(filePath)) : process.cwd();
+    const git = simpleGit({ baseDir });
+
+    // Check if we're in a git repository
+    const isRepo = await git.checkIsRepo();
+    if (!isRepo) {
+      throw new Error('Not in a git repository');
+    }
+
+    try {
+      // Verify the commit exists in this repository first
+      try {
+        await git.revparse([commitHash]);
+      } catch {
+        throw new Error(`Commit not found in repository at ${baseDir}: ${commitHash}`);
+      }
+
+      // Use no-patch to get clean sections for reliable parsing
+      const headerInfo = await git.show([commitHash, '--format=fuller', '--no-patch']);
+      const nameStatusOut = await git.show([commitHash, '--name-status', '--pretty=format:']);
+      const numstatOut = await git.show([commitHash, '--numstat', '--pretty=format:']);
+
+      // Initialize fields
+      let hash = '';
+      let shortHash = '';
+      let author = '';
+      let authorEmail = '';
+      let authorTime = '';
+      let authorTimeZone = '';
+      let committer = '';
+      let committerEmail = '';
+      let committerTime = '';
+      let committerTimeZone = '';
+      let summary = '';
+      let message = '';
+      let parentHashes: string[] = [];
+      let treeHash = '';
+
+      // Parse header and message
+      const headerLines = headerInfo.split('\n');
+      for (const raw of headerLines) {
+        const line = raw;
+        if (line.startsWith('commit ')) {
+          hash = line.substring(7).trim();
+          shortHash = hash.substring(0, 7);
+        } else if (line.startsWith('Author: ')) {
+          const m = line.match(/^Author:\s*(.+?)\s*<(.+?)>/);
+          if (m) {
+            author = m[1].trim();
+            authorEmail = m[2].trim();
+          }
+        } else if (line.startsWith('Commit: ')) {
+          const m = line.match(/^Commit:\s*(.+?)\s*<(.+?)>/);
+          if (m) {
+            committer = m[1].trim();
+            committerEmail = m[2].trim();
+          }
+        } else if (line.startsWith('AuthorDate: ')) {
+          const d = line.substring('AuthorDate: '.length).trim();
+          const tz = d.match(/ ([-+]\d{4})$/);
+          if (tz) {
+            authorTimeZone = tz[1];
+            authorTime = d.slice(0, -tz[0].length).trim();
+          } else {
+            authorTime = d;
+          }
+        } else if (line.startsWith('CommitDate: ')) {
+          const d = line.substring('CommitDate: '.length).trim();
+          const tz = d.match(/ ([-+]\d{4})$/);
+          if (tz) {
+            committerTimeZone = tz[1];
+            committerTime = d.slice(0, -tz[0].length).trim();
+          } else {
+            committerTime = d;
+          }
+        } else if (line.startsWith('Merge: ')) {
+          const rest = line.substring('Merge: '.length).trim();
+          parentHashes = rest.split(/\s+/).filter(Boolean);
+        } else if (line.startsWith('tree ')) {
+          treeHash = line.substring(5).trim();
+        } else if (line.startsWith('    ')) {
+          const msgLine = line.slice(4);
+          if (msgLine.length > 0) {
+            if (!summary) summary = msgLine.trim();
+            message += msgLine + '\n';
+          } else {
+            message += '\n';
+          }
+        }
+      }
+      message = message.trim();
+
+      // Build changed files from name-status and numstat
+      const pathToChange: Map<string, GitChangedFile> = new Map();
+
+      // name-status
+      for (const line of nameStatusOut.split('\n')) {
+        if (!line.trim()) continue;
+        const parts = line.split('\t');
+        if (parts.length >= 2) {
+          const statusRaw = parts[0];
+          const status = statusRaw.charAt(0);
+          if (status === 'R' || status === 'C') {
+            const oldPath = parts[1];
+            const newPath = parts[2] || parts[1];
+            const existing = pathToChange.get(newPath) || { status: '', path: newPath };
+            existing.status = status;
+            existing.oldPath = oldPath;
+            pathToChange.set(newPath, existing);
+          } else {
+            const p = parts[1];
+            const existing = pathToChange.get(p) || { status: '', path: p };
+            existing.status = status;
+            pathToChange.set(p, existing);
+          }
+        }
+      }
+
+      // numstat
+      for (const line of numstatOut.split('\n')) {
+        if (!line.trim()) continue;
+        const parts = line.split('\t');
+        if (parts.length >= 3) {
+          const insStr = parts[0];
+          const delStr = parts[1];
+          let path = parts[2];
+          let oldPath: string | undefined;
+          if (parts.length >= 4) {
+            // rename case: old\tnew
+            oldPath = parts[2];
+            path = parts[3];
+          }
+          const ins = insStr === '-' ? undefined : parseInt(insStr);
+          const del = delStr === '-' ? undefined : parseInt(delStr);
+          const existing = pathToChange.get(path) || { status: '', path };
+          existing.insertions = ins;
+          existing.deletions = del;
+          if (oldPath && !existing.oldPath) existing.oldPath = oldPath;
+          pathToChange.set(path, existing);
+        }
+      }
+
+      const changedFiles = Array.from(pathToChange.values());
+      let filesChanged = changedFiles.length;
+      let insertions = 0;
+      let deletions = 0;
+      for (const f of changedFiles) {
+        if (typeof f.insertions === 'number') insertions += f.insertions;
+        if (typeof f.deletions === 'number') deletions += f.deletions;
+      }
+
+      // Get diff if requested
+      let diff: string | undefined;
+      if (includeDiff) {
+        try {
+          diff = await git.show([commitHash]);
+        } catch (error) {
+          // Diff might fail for some commits, continue without it
+          console.warn('Failed to get diff:', error);
+        }
+      }
+
+      return {
+        hash,
+        shortHash,
+        author,
+        authorEmail,
+        authorTime,
+        authorTimeZone,
+        committer,
+        committerEmail,
+        committerTime,
+        committerTimeZone,
+        summary,
+        message,
+        parentHashes,
+        treeHash,
+        filesChanged,
+        insertions,
+        deletions,
+        diff,
+        changedFiles
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get commit details: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 }

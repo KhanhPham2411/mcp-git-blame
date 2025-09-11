@@ -7,7 +7,7 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import { GitBlameParams } from './types.js';
+import { GitBlameParams, GitCommitDetailParams } from './types.js';
 import { GitService } from './git-service.js';
 
 class GitBlameServer {
@@ -59,6 +59,28 @@ class GitBlameServer {
               required: ['filePath'],
             },
           },
+          {
+            name: 'git_commit_detail',
+            description: 'Get detailed information about a specific commit',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                commitHash: {
+                  type: 'string',
+                  description: 'The commit hash to get details for',
+                },
+                includeDiff: {
+                  type: 'boolean',
+                  description: 'Whether to include the full diff in the response (optional, defaults to false)',
+                },
+                filePath: {
+                  type: 'string',
+                  description: 'Optional file path to scope the repository for the commit lookup',
+                },
+              },
+              required: ['commitHash'],
+            },
+          },
         ] as Tool[],
       };
     });
@@ -72,6 +94,14 @@ class GitBlameServer {
           lineTo: args.lineTo as number | undefined,
         };
         return await this.handleGitBlame(params);
+      } else if (request.params.name === 'git_commit_detail') {
+        const args = request.params.arguments || {};
+        const params: GitCommitDetailParams = {
+          commitHash: args.commitHash as string,
+          includeDiff: args.includeDiff as boolean | undefined,
+          filePath: args.filePath as string | undefined,
+        };
+        return await this.handleGitCommitDetail(params);
       }
       throw new Error(`Unknown tool: ${request.params.name}`);
     });
@@ -95,6 +125,23 @@ class GitBlameServer {
     }
   }
 
+  private async handleGitCommitDetail(params: GitCommitDetailParams) {
+    try {
+      const result = await this.gitService.getCommitDetail(params);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to get commit details: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 
   async run() {
     const transport = new StdioServerTransport();

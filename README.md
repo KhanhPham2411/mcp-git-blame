@@ -90,6 +90,25 @@ The server is built with TypeScript and uses:
 - `@modelcontextprotocol/sdk` for MCP protocol implementation
 - `simple-git` for git operations
 
+## Cursor Integration
+
+To add this server to Cursor, add the following to your Cursor MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "git-blame": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "C:\\Data\\Personal\\Projects\\20250812_MCP\\mcp-git-blame",
+      "env": {}
+    }
+  }
+}
+```
+
+See `cursor-config-example.md` for detailed integration instructions.
+
 ## License
 
 MIT

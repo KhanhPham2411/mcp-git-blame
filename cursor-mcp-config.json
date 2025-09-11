@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "git-blame": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "C:\\Data\\Personal\\Projects\\20250812_MCP\\mcp-git-blame",
+      "env": {}
+    }
+  }
+}

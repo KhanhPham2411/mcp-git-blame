@@ -85,7 +85,7 @@ export class GitService {
 
   async getCommitDetail(params: GitCommitDetailParams): Promise<GitCommitDetail> {
     const startTime = Date.now();
-    const { commitHash, includeDiff = false, filePath } = params;
+    const { commitHash, includeDiff = false, includeFileDiffs, filePath } = params;
 
     this.logger.info('Starting getCommitDetail', {
       commitHash,
@@ -304,6 +304,76 @@ export class GitService {
         } catch (error) {
           // Diff might fail for some commits, continue without it
           this.logger.warn('Failed to get diff', {
+            commitHash,
+            error: error instanceof Error ? error.message : String(error),
+            operation: 'getCommitDetail'
+          });
+        }
+      }
+
+      // Optionally include per-file unified diffs
+      const needFileDiffs = !!includeFileDiffs || includeDiff === true;
+      if (needFileDiffs) {
+        try {
+          // Use existing diff text when available; otherwise fetch just the patches
+          let patchSource = diff;
+          if (!patchSource) {
+            this.logger.info('Fetching per-file patches', { commitHash, operation: 'getCommitDetail' });
+            patchSource = await git.show([commitHash, '--pretty=format:', '--patch', '--no-color']);
+          }
+
+          if (patchSource) {
+            type FilePatch = { aPath: string; bPath: string; patch: string };
+            const filePatches: FilePatch[] = [];
+
+            const lines = patchSource.split('\n');
+            let current: FilePatch | null = null;
+            let buffer: string[] = [];
+
+            const flush = () => {
+              if (current) {
+                current.patch = buffer.join('\n');
+                filePatches.push(current);
+              }
+              current = null;
+              buffer = [];
+            };
+
+            const diffHeaderRegex = /^diff --git a\/(.+) b\/(.+)$/;
+            for (const line of lines) {
+              const m = line.match(diffHeaderRegex);
+              if (m) {
+                // new file section starts
+                flush();
+                current = { aPath: m[1], bPath: m[2], patch: '' };
+                buffer.push(line);
+              } else if (current) {
+                buffer.push(line);
+              }
+            }
+            flush();
+
+            const stripPrefix = (p: string) => p.replace(/^a\//, '').replace(/^b\//, '');
+
+            // Build quick index of patches by both aPath and bPath without prefixes
+            const pathToPatch: Map<string, string> = new Map();
+            for (const fp of filePatches) {
+              const aKey = stripPrefix(fp.aPath);
+              const bKey = stripPrefix(fp.bPath);
+              if (aKey) pathToPatch.set(aKey, fp.patch);
+              if (bKey) pathToPatch.set(bKey, fp.patch);
+            }
+
+            for (const cf of changedFiles) {
+              const keyNow = cf.path.replace(/\\/g, '/');
+              const patch = pathToPatch.get(keyNow) || (cf.oldPath ? pathToPatch.get(cf.oldPath.replace(/\\/g, '/')) : undefined);
+              if (patch) {
+                (cf as GitChangedFile).patch = patch;
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.warn('Failed to compute per-file patches', {
             commitHash,
             error: error instanceof Error ? error.message : String(error),
             operation: 'getCommitDetail'

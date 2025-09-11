@@ -76,6 +76,10 @@ class GitBlameServer {
                   type: 'boolean',
                   description: 'Whether to include the full diff in the response (optional, defaults to false)',
                 },
+                includeFileDiffs: {
+                  type: 'boolean',
+                  description: 'Whether to include per-file unified diffs in changedFiles[].patch (optional, defaults to false)'
+                },
                 filePath: {
                   type: 'string',
                   description: 'Optional file path to scope the repository for the commit lookup',
@@ -102,6 +106,7 @@ class GitBlameServer {
         const params: GitCommitDetailParams = {
           commitHash: args.commitHash as string,
           includeDiff: args.includeDiff as boolean | undefined,
+          includeFileDiffs: args.includeFileDiffs as boolean | undefined,
           filePath: args.filePath as string | undefined,
         };
         return await this.handleGitCommitDetail(params);

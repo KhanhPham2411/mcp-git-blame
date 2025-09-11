@@ -49,6 +49,8 @@ export interface GitCommitDetailParams {
   includeDiff?: boolean;
   // Optional: any path inside the target repository (e.g., blamed file)
   filePath?: string;
+  // If true, also include per-file unified diffs in changedFiles[].patch
+  includeFileDiffs?: boolean;
 }
 
 export interface GitChangedFile {
@@ -61,4 +63,6 @@ export interface GitChangedFile {
   // Insertions/deletions for this path (may be undefined for binary changes)
   insertions?: number;
   deletions?: number;
+  // Optional per-file unified diff (when includeFileDiffs is true)
+  patch?: string;
 }

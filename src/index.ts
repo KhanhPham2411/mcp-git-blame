@@ -166,10 +166,15 @@ class GitBlameServer {
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('MCP Git Blame server running on stdio');
+    // Don't output to console as it interferes with MCP protocol communication
+    this.logger.info('MCP Git Blame server running on stdio');
   }
 }
 
 // Start the server
 const server = new GitBlameServer();
-server.run().catch(console.error);
+server.run().catch((error) => {
+  // Use logger instead of console.error to avoid interfering with MCP protocol
+  const logger = Logger.getInstance();
+  logger.error('Server startup failed', error);
+});

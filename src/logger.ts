@@ -48,14 +48,8 @@ class Logger {
   private log(level: string, message: string, ...args: any[]): void {
     const formattedMessage = this.formatMessage(level, message, ...args);
     
-    // Write to console
-    if (level === 'error') {
-      console.error(formattedMessage);
-    } else {
-      console.log(formattedMessage);
-    }
-    
-    // Write to file
+    // Only write to file to avoid interfering with MCP protocol communication
+    // MCP uses stdio for communication, so console output breaks the protocol
     this.writeToFile(formattedMessage);
   }
 

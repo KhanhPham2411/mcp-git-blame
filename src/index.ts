@@ -9,7 +9,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { simpleGit, SimpleGit } from 'simple-git';
 import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 
 interface GitBlameLine {
   line: number;
@@ -52,6 +52,8 @@ class GitBlameServer {
       }
     );
 
+    // Default instance; per-request we will construct a scoped instance
+    // with baseDir pointing at the file's directory to ensure repo detection.
     this.git = simpleGit();
     this.setupToolHandlers();
   }
@@ -119,18 +121,26 @@ class GitBlameServer {
     }
 
     try {
-      // Check if we're in a git repository
-      const isRepo = await this.git.checkIsRepo();
+      // Use a git instance scoped to the target file's directory. This avoids
+      // relying on the process CWD which may not be the repo root (especially
+      // when launched by external tools on Windows).
+      const baseDir = dirname(absolutePath);
+      const git = simpleGit({ baseDir });
+
+      // Check if we're in a git repository (from the file's directory)
+      const isRepo = await git.checkIsRepo();
       if (!isRepo) {
         throw new Error('Not in a git repository');
       }
 
       // Get git blame information
-      const blameResult = await this.git.raw([
+      // Convert path separators for Git compatibility on Windows
+      const gitPath = absolutePath.replace(/\\/g, '/');
+      const blameResult = await git.raw([
         'blame',
         '--porcelain',
         '--line-porcelain',
-        absolutePath
+        gitPath
       ]);
 
       const blameLines = this.parseBlameOutput(blameResult);
@@ -172,59 +182,90 @@ class GitBlameServer {
   private parseBlameOutput(blameOutput: string): GitBlameLine[] {
     const lines = blameOutput.split('\n');
     const blameLines: GitBlameLine[] = [];
-    let currentCommit: Partial<GitBlameLine> = {};
-    let lineNumber = 0;
+
+    // State for the current line's blame info
+    let current: Partial<GitBlameLine> | null = null;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      if (line.startsWith('filename ')) {
-        // This is the start of a new commit block
-        if (currentCommit.line && currentCommit.content !== undefined) {
-          blameLines.push(currentCommit as GitBlameLine);
-        }
-        
-        currentCommit = {
-          filename: line.substring(9), // Remove 'filename ' prefix
-        };
-      } else if (line.startsWith('author ')) {
-        currentCommit.author = line.substring(7);
-      } else if (line.startsWith('author-mail ')) {
-        currentCommit.authorEmail = line.substring(12);
-      } else if (line.startsWith('author-time ')) {
-        currentCommit.authorTime = line.substring(12);
-      } else if (line.startsWith('author-tz ')) {
-        currentCommit.authorTimeZone = line.substring(10);
-      } else if (line.startsWith('committer ')) {
-        currentCommit.committer = line.substring(10);
-      } else if (line.startsWith('committer-mail ')) {
-        currentCommit.committerEmail = line.substring(15);
-      } else if (line.startsWith('committer-time ')) {
-        currentCommit.committerTime = line.substring(15);
-      } else if (line.startsWith('committer-tz ')) {
-        currentCommit.committerTimeZone = line.substring(13);
-      } else if (line.startsWith('summary ')) {
-        currentCommit.summary = line.substring(8);
-      } else if (line.startsWith('previous ')) {
-        currentCommit.previousHash = line.substring(9);
-      } else if (line.startsWith('filename ')) {
-        currentCommit.previousFilename = line.substring(9);
-      } else if (line.startsWith('hash ')) {
-        currentCommit.hash = line.substring(5);
-      } else if (line.match(/^\d+\s+\d+\s+\d+$/)) {
-        // This is a line number marker: "lineNumber numLines numLines"
-        const parts = line.split(/\s+/);
-        lineNumber = parseInt(parts[0], 10);
-        currentCommit.line = lineNumber;
-      } else if (line.startsWith('\t')) {
-        // This is the actual line content
-        currentCommit.content = line.substring(1);
+      const raw = lines[i];
+      if (raw.length === 0) {
+        continue;
       }
-    }
 
-    // Add the last commit if it exists
-    if (currentCommit.line && currentCommit.content !== undefined) {
-      blameLines.push(currentCommit as GitBlameLine);
+      // Header line example: "<hash> <orig_lineno> <final_lineno> <num_lines>"
+      // e.g., "da39a3ee5e6b4b0d3255bfef95601890afd80709 1 1 1"
+      const headerMatch = raw.match(/^([0-9a-f]{8,40})\s+\d+\s+(\d+)\s+\d+/i);
+      if (headerMatch) {
+        // If there was a previous entry that never received content, drop it
+        // (content is required to finalize an entry).
+        current = {
+          hash: headerMatch[1],
+          line: parseInt(headerMatch[2], 10),
+        };
+        continue;
+      }
+
+      // Key-value metadata lines
+      if (current) {
+        if (raw.startsWith('author ')) {
+          current.author = raw.substring('author '.length);
+          continue;
+        }
+        if (raw.startsWith('author-mail ')) {
+          current.authorEmail = raw.substring('author-mail '.length);
+          continue;
+        }
+        if (raw.startsWith('author-time ')) {
+          current.authorTime = raw.substring('author-time '.length);
+          continue;
+        }
+        if (raw.startsWith('author-tz ')) {
+          current.authorTimeZone = raw.substring('author-tz '.length);
+          continue;
+        }
+        if (raw.startsWith('committer ')) {
+          current.committer = raw.substring('committer '.length);
+          continue;
+        }
+        if (raw.startsWith('committer-mail ')) {
+          current.committerEmail = raw.substring('committer-mail '.length);
+          continue;
+        }
+        if (raw.startsWith('committer-time ')) {
+          current.committerTime = raw.substring('committer-time '.length);
+          continue;
+        }
+        if (raw.startsWith('committer-tz ')) {
+          current.committerTimeZone = raw.substring('committer-tz '.length);
+          continue;
+        }
+        if (raw.startsWith('summary ')) {
+          current.summary = raw.substring('summary '.length);
+          continue;
+        }
+        if (raw.startsWith('previous ')) {
+          // Format: previous <hash> <filename>
+          const prev = raw.substring('previous '.length).split(' ');
+          current.previousHash = prev[0];
+          current.previousFilename = prev.slice(1).join(' ');
+          continue;
+        }
+        if (raw.startsWith('filename ')) {
+          current.filename = raw.substring('filename '.length);
+          continue;
+        }
+
+        // Content line starts with a tab, keep content exactly as-is after the tab
+        if (raw.startsWith('\t')) {
+          current.content = raw.substring(1);
+          // Finalize the current entry when content is read
+          if (typeof current.line === 'number' && current.content !== undefined) {
+            blameLines.push(current as GitBlameLine);
+          }
+          current = null;
+          continue;
+        }
+      }
     }
 
     return blameLines;

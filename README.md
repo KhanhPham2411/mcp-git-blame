@@ -1,6 +1,6 @@
-# MCP Git Blame Server
+# MCP Git Local Blame Server
 
-An MCP (Model Context Protocol) server that provides git blame information for files and specific line ranges.
+An MCP (Model Context Protocol) server that provides git local blame information for files and specific line ranges.
 
 ## Features
 

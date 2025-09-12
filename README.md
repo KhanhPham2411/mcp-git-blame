@@ -105,6 +105,7 @@ To add this server to Cursor, add the following to your Cursor MCP configuration
     }
   }
 }
+
 ```
 
 See `cursor-config-example.md` for detailed integration instructions.

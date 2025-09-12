@@ -9,6 +9,10 @@ An MCP (Model Context Protocol) server that provides git local blame information
 - Detailed commit information including author, committer, timestamps, and commit messages
 - Works with any git repository
 
+## Screenshot
+
+![Sample Output](assets/sample.png)
+
 ## Installation
 
 1. Install dependencies:
@@ -100,7 +104,7 @@ To add this server to Cursor, add the following to your Cursor MCP configuration
     "git-blame": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "C:\\Data\\Personal\\Projects\\20250812_MCP\\mcp-git-blame",
+      "cwd": "{you-folder}\\mcp-git-blame",
       "env": {}
     }
   }

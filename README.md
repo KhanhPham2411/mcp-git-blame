@@ -101,12 +101,9 @@ To add this server to Cursor, add the following to your Cursor MCP configuration
 ```json
 {
   "mcpServers": {
-    "git-blame": {
-      "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "{you-folder}\\mcp-git-blame",
-      "env": {}
-    }
+    "command": "node",
+    "args": ["{your-folder}/mcp-git-blame/dist/index.js"],
+    "env": {}
   }
 }
 

@@ -2,8 +2,7 @@
   "mcpServers": {
     "git-blame": {
       "command": "node",
-      "args": ["dist/index.js"],
-      "cwd": "C:\\Data\\Personal\\Projects\\20250812_MCP\\mcp-git-blame",
+      "args": ["{your-folder}/mcp-git-blame/dist/index.js"],
       "env": {}
     }
   }

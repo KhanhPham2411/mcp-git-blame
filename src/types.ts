@@ -47,7 +47,7 @@ export interface GitCommitDetail {
 export interface GitCommitDetailParams {
   commitHash: string;
   includeDiff?: boolean;
-  // Required: any path inside the target repository (e.g., blamed file)
+  // Required: absolute path to a file inside the target repository
   filePath: string;
   // If true, also include per-file unified diffs in changedFiles[].patch
   includeFileDiffs?: boolean;

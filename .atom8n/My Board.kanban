@@ -1,0 +1,36 @@
+{
+  "readme": "To open this file inside VSCode, you need to install VSCode extension \"Kanban atom8n\"",
+  "columns": [
+    {
+      "id": "col_63jqfq_mhojz8q9",
+      "title": "To Do",
+      "order": 0,
+      "boardId": "",
+      "tasks": [
+        {
+          "id": "task_syb25n_mhok09j3",
+          "title": "filePath param",
+          "description": "make filePath param more clear, that it only accept file path, not accept folder path",
+          "priority": "MEDIUM",
+          "order": 0,
+          "columnId": "col_63jqfq_mhojz8q9",
+          "assigneeId": null
+        }
+      ]
+    },
+    {
+      "id": "col_q9g4d3_mhojz8qa",
+      "title": "In Progress",
+      "order": 1,
+      "boardId": "",
+      "tasks": []
+    },
+    {
+      "id": "col_kmqmop_mhojz8qa",
+      "title": "Done",
+      "order": 2,
+      "boardId": "",
+      "tasks": []
+    }
+  ]
+}

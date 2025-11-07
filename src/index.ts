@@ -46,7 +46,7 @@ class GitBlameServer {
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Full path to the file to get blame information for',
+                  description: 'Absolute path to a readable file (directories or relative path are not allowed)',
                 },
                 lineFrom: {
                   type: 'number',
@@ -82,7 +82,7 @@ class GitBlameServer {
                 },
                 filePath: {
                   type: 'string',
-                  description: 'File path to scope the repository for the commit lookup',
+                  description: 'Absolute path to a file within the repository (directories or relative path are not allowed)',
                 },
               },
               required: ['commitHash', 'filePath'],
